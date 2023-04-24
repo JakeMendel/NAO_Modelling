@@ -6,8 +6,6 @@ from dataclasses import dataclass, field
 from typing import Union, Tuple, Iterable, Optional, Any, Type, Callable, Dict
 from tqdm import tqdm
 from fancy_einsum import einsum
-from scipy import special
-from itertools import chain
 
 #%%
 class Disease:
