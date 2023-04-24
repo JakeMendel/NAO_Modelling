@@ -86,5 +86,5 @@ for mixing_LR in mixing_LRs:
     datasets[key] = daily
     print(f'Mixing_LR {mixing_LR} complete')
 
-calculated_data3 = F.differences_vs_threshold_data(datasets, filters, thresholds)
-F.differences_vs_variable(datasets,mixing_LRs,calculated_data3,filters,thresholds,thresholds,log= 'x', x_name='Mixing Likelihood Ratio')
+threshold_data = F.differences_vs_threshold_data(datasets, filters, thresholds)
+F.differences_vs_variable(datasets,mixing_LRs,threshold_data,filters,thresholds,thresholds,log= 'x', x_name='Mixing Likelihood Ratio')

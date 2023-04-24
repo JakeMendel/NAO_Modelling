@@ -752,12 +752,12 @@ def default_axis_order():
 @dataclass
 class SimData:
     array: np.ndarray
-    all_labels: Dict
+    values_present: Dict
     axis_order: list[str] = field(default_factory=default_axis_order)
 
     def __getitem__(self,to_keep):
-        assert isinstance(self.all_labels,dict)
-        values_to_keep = self.all_labels.copy()
+        assert isinstance(self.values_present,dict)
+        values_to_keep = self.values_present.copy()
         if isinstance(to_keep, list) or isinstance(to_keep, tuple):
             for category, elemtype in zip(to_keep, values_to_keep.keys()):
                 values_to_keep[elemtype] = category
@@ -766,27 +766,27 @@ class SimData:
                 values_to_keep[key] = value
 
         new_all_values = {}
-        for key,value in self.all_labels.items():
+        for key,value in self.values_present.items():
             new_all_values[key] = []
             for elem in value:
                 if elem in values_to_keep[key]:
                     new_all_values[key].append(elem)
 
         chosen_indices = {}
-        for key in self.all_labels.keys():
-            chosen_indices[key] = np.zeros(len(self.all_labels[key])).astype(bool)
-            for i,value in enumerate(self.all_labels[key]):
+        for key in self.values_present.keys():
+            chosen_indices[key] = np.zeros(len(self.values_present[key])).astype(bool)
+            for i,value in enumerate(self.values_present[key]):
                 if value in values_to_keep[key]:
                     chosen_indices[key][i] = True
 
             for value in values_to_keep[key]:
-                assert value in self.all_labels[key], f'{value} is not a member of {key}, which currently only contains {self.all_labels[key]}'
+                assert value in self.values_present[key], f'{value} is not a member of {key}, which currently only contains {self.values_present[key]}'
         out_array = self.choose_array(chosen_indices)
-        return SimData(out_array, all_labels = new_all_values, axis_order=self.axis_order)
+        return SimData(out_array, values_present = new_all_values, axis_order=self.axis_order)
     
     def __eq__(self,other):
         array_bool = np.all(self.array - other.array == 0)
-        label_bool = self.all_labels == other.all_labels
+        label_bool = self.values_present == other.all_labels
         return array_bool and label_bool
     
     def filter(self, to_keep):
@@ -813,7 +813,7 @@ class SimData:
         
         axistypes = [ax if isinstance(ax,str) else self.axis_order[ax] for ax in axislist]
         new_axes = self.axis_order if keepdims else [ax for ax in self.axis_order if ax not in axistypes]
-        new_labels = self.all_labels.copy()
+        new_labels = self.values_present.copy()
         for ax in axistypes:
             if not keepdims:
                 del new_labels[ax]
@@ -825,12 +825,12 @@ class SimData:
     def wrap_np_binary_operator(self, np_function: Callable, other, SimData_out: bool = True):
         if isinstance(other, SimData):
             assert self.axis_order == other.axis_order
-            assert self.all_labels == other.all_labels
+            assert self.values_present == other.values_present
             other_arr = other.array
         else:
             other_arr = other
         out_arr = np_function(self.array, other_arr)
-        return SimData(out_arr,self.all_labels, self.axis_order) if SimData_out else out_arr
+        return SimData(out_arr,self.values_present, self.axis_order) if SimData_out else out_arr
 
     def sum(self, axis: Union[int, str, Iterable] = 0, keepdims: bool = False, SimData_out: bool = True):
         return self.wrap_np_function(np.sum,axis,keepdims, SimData_out)
@@ -860,7 +860,7 @@ class SimData:
         return self.wrap_np_function(np.argmax, axis, keepdims, SimData_out)
     
     def daily_avg(self):
-        old_times = self.all_labels['times']
+        old_times = self.values_present['times']
         delta_t = old_times[1] - old_times[0]
         window = round(1/delta_t)
         
@@ -869,7 +869,7 @@ class SimData:
         new_shape = tuple(new_shape+[window])
 
         new_arr = self.array.reshape(new_shape).sum(axis = -1)
-        new_labels = self.all_labels.copy()
+        new_labels = self.values_present.copy()
         new_labels['times'] = np.array(old_times).reshape((len(old_times)//window,window)).mean(axis=-1).tolist()
         return SimData(new_arr, new_labels, self.axis_order)
 
@@ -905,7 +905,7 @@ def hists_at_time(data: SimData,
         legend_labels = [f'Dataset {i+1}' for i in range(len(filters))]
     assert len(legend_labels) == len(filters)
     summed_axes = tuple([i for i,axistype in enumerate(data.axis_order) if axistype != 'sims'])
-    time = min(data.all_labels['times'], key=lambda x:abs(x-time))
+    time = min(data.values_present['times'], key=lambda x:abs(x-time))
     for i,filter in enumerate(filters):
         filter['times'] = [time]
         values = data[filter].array.sum(axis=summed_axes)
@@ -976,11 +976,11 @@ def plot_avg_vals(datasets: Union[SimData, dict[str,SimData]],
             x_axis = total_infections.mean(axis='sims').array
             x_std = total_infections.std(axis='sims').array
         elif x_axis_type == 'times':
-            x_axis = np.array(dataset.all_labels['times'])
+            x_axis = np.array(dataset.values_present['times'])
             x_std = 0
         else:
             assert isinstance(doubling_time, float), 'Specify Doubling time to use scaled_times!'
-            x_axis = np.array(dataset.all_labels['times']) / doubling_time
+            x_axis = np.array(dataset.values_present['times']) / doubling_time
             x_std = 0
 
         for f, filter in enumerate(filters):
@@ -1049,7 +1049,7 @@ def joint_times_distribution(data: SimData,
     totals = [data[filter].sum(axis=('cities','datatypes','groups','compartments')).array for filter in total_filters]
     fractions = [a/b for a,b in zip(filtered,totals)]
     steps = [find_first_index(arr>threshold) for arr in fractions]
-    x,y = tuple([np.array(data.all_labels['times'])[step] for step in steps ])
+    x,y = tuple([np.array(data.values_present['times'])[step] for step in steps ])
     ax.hist2d(x, y, bins=(bins,bins), cmap = plt.cm.jet)
     ax.set_xlabel(f'Times in {legend_labels[0]}')
     ax.set_ylabel(f'Times in {legend_labels[1]}')
@@ -1064,7 +1064,7 @@ def times_until_threshold(data: SimData,
     del total_filter['compartments']
     totals = data[total_filter].sum(axis=('cities','datatypes','groups','compartments')).array
     fraction = filtered/np.maximum(totals, 1e-10)
-    return np.array(data.all_labels['times'])[find_first_index(fraction>threshold)]
+    return np.array(data.values_present['times'])[find_first_index(fraction>threshold)]
 
 def time_diff_at_threshold(data: SimData,
                            filters: list[dict],
@@ -1082,7 +1082,7 @@ def time_diff_at_threshold(data: SimData,
     totals = [data[filter].sum(axis=('cities','datatypes','groups','compartments')).array for filter in total_filters]
     fractions = [a/np.maximum(b, 1e-10) for a,b in zip(filtered,totals)]
     steps = [find_first_index(arr>threshold) for arr, threshold in zip(fractions,thresholds)]
-    x,y = tuple([np.array(data.all_labels['times'])[step] for step in steps ])
+    x,y = tuple([np.array(data.values_present['times'])[step] for step in steps ])
     return y - x
 
 def different_thresholds_diffs_data(data: SimData,
@@ -1091,7 +1091,7 @@ def different_thresholds_diffs_data(data: SimData,
                                     thresholds2: Optional[np.ndarray] = None):
     if thresholds2 is None:
         thresholds2 = thresholds1
-    times = np.zeros((len(thresholds1), len(thresholds2), 2, len(data.all_labels['sims'])))
+    times = np.zeros((len(thresholds1), len(thresholds2), 2, len(data.values_present['sims'])))
     for i,threshold in tqdm(enumerate(thresholds1)):
         times[i,:,0] = times_until_threshold(data, filters[0], threshold)
     for i,threshold in tqdm(enumerate(thresholds2)):
@@ -1162,7 +1162,7 @@ def threshold_ratio_diffs(data: SimData,
         x_points = 10**np.linspace(xlimlog[0],xlimlog[1],n_points) if isinstance(xlimlog,tuple) else np.ones(n_points) * 10 ** xlimlog
         y_points = 10**np.linspace(ylims_log[0],ylims_log[1],n_points) if isinstance(ylims_log,tuple) else np.ones(n_points) * 10 ** ylims_log
         ratios = y_points / x_points
-        diffs = np.zeros((n_points, len(data.all_labels['sims'])))
+        diffs = np.zeros((n_points, len(data.values_present['sims'])))
         for i in tqdm(range(n_points)):
             diffs[i] = time_diff_at_threshold(data,filters,x_points[i], y_points[i])
         means = diffs.mean(axis=1)
@@ -1437,7 +1437,6 @@ class Travel(City):
                       disease: Disease,
                       I0s: Union[int,float,list[int],list[float],np.ndarray],
                       n_sims: int = 100,
-                      suppress_return = False,
                       moving_avg: bool = False):
         if isinstance(I0s, np.ndarray):
             assert I0s.dtype == np.int64
@@ -1476,35 +1475,35 @@ class Travel(City):
         for city in tqdm(self.cities):
             city.daily_flight_data(moving_avg = moving_avg)
         
-        if not suppress_return:
-            n_datatypes = 5 if moving_avg else 3
-            out_arr = np.zeros((self.n_cities, n_datatypes, self.n_groups, len(self.compartments), self.n_sims, self.simulation_steps))
-            if moving_avg:
-                for i,city in enumerate(self.cities):
-                    out_arr[i] = np.array([city.municipal,
-                                        city.arrivals,
-                                        city.departures,
-                                        city.arrivals_moving_avg,
-                                        city.departures_moving_avg])
-                all_labels = {'cities': self.city_names,
-                            'datatypes': ['municipal', 'arrivals', 'departures', 'arrivals_moving_avg', 'departures_moving_avg'],
-                            'groups': self.cities[0].groups,
-                            'compartments': self.compartments,
-                            'sims': list(range(self.n_sims)),
-                            'times': self.times}
-            else:
-                for i,city in enumerate(self.cities):
-                    out_arr[i] = np.array([city.municipal,
-                                        city.arrivals,
-                                        city.departures])
-                all_labels = {'cities': self.city_names,
-                            'datatypes': ['municipal', 'arrivals', 'departures'],
-                            'groups': self.cities[0].groups,
-                            'compartments': self.compartments,
-                            'sims': list(range(self.n_sims)),
-                            'times': self.times}
+        #make and return SimData
+        n_datatypes = 5 if moving_avg else 3
+        out_arr = np.zeros((self.n_cities, n_datatypes, self.n_groups, len(self.compartments), self.n_sims, self.simulation_steps))
+        if moving_avg:
+            for i,city in enumerate(self.cities):
+                out_arr[i] = np.array([city.municipal,
+                                    city.arrivals,
+                                    city.departures,
+                                    city.arrivals_moving_avg,
+                                    city.departures_moving_avg])
+            all_labels = {'cities': self.city_names,
+                        'datatypes': ['municipal', 'arrivals', 'departures', 'arrivals_moving_avg', 'departures_moving_avg'],
+                        'groups': self.cities[0].groups,
+                        'compartments': self.compartments,
+                        'sims': list(range(self.n_sims)),
+                        'times': self.times}
+        else:
+            for i,city in enumerate(self.cities):
+                out_arr[i] = np.array([city.municipal,
+                                    city.arrivals,
+                                    city.departures])
+            all_labels = {'cities': self.city_names,
+                        'datatypes': ['municipal', 'arrivals', 'departures'],
+                        'groups': self.cities[0].groups,
+                        'compartments': self.compartments,
+                        'sims': list(range(self.n_sims)),
+                        'times': self.times}
 
-            return SimData(out_arr, all_labels)
+        return SimData(out_arr, all_labels)
 
     def __str__(self):
         out = ''
