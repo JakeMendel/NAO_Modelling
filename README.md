@@ -6,6 +6,13 @@
 
 `generic_model.ipynb` is a jupyter notebook with various scripts for generating other useful plots.
 
+# Dependencies
+I have used
+- matplotlib version 3.7.1
+- numpy version 1.24.1
+- tqdm version 4.62.3
+- fancy_einsum version 0.0.3
+
 # The Model
 
 I use a discrete time stochastic network SEIR model to simulate an epidemic. The epidemic starts in a single city, with some number of people initially chosen to be infectious (or exposed). Each timestep:
