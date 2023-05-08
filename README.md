@@ -76,7 +76,8 @@ At each timestep in the simulation:
     1. The overall rate of travel from city $i$ to city $j$ is `mixmatrix[i,j]`.
     2. In non-basic cities, the rates of travel will vary by group, so that the total rate of transition from all groups in city $i$ to all groups in city $j$ is `mixmatrix[i,j]`. For example, in `FrequentFlyerCity`, the fraction of travellers that are in the frequent flyer group is the parameter `p_ff`. Hence the travel rate for this group is `mixmatrix[i,j] * p_ff`.
     3. I have not enforced that the number of people in each city is conserved. Therefore the number of people in each city will undergo a random walk over time. To avoid this, the expected number of people to leave city $i$ and group $g$ is scaled by $\frac{N_{ig}(t)}{N_{ig}(0)}$ (where ${N_{ig}(t)}$ is the number of people in group $g$ and city $i$ at time $t$) to provide a pressure to conserve populations in each group and city.
-    4. For each group, the number of people who travel at each timestep is calculated in exactly the same way as in step 1(d). The assumptions this implies are:
+    4. For each group, the number of people who travel at each timestep is calculated in exactly the same way as in step 1(d): $$n_{ij} \sim \text{Binom}(n_i,1-\frac{p(\text{group})M_{ij}}{N_i(t=0)}\delta t)$$
+    where p(group) is the factor that is unique to each group. The assumptions this implies are:
         - Travelling is a Poisson process, and individuals travel independently (whereas in reality, people travel in batches on planes).
         - Travel is instantaneous
         - Travel rates are independent of compartment (S/E/I/R)
