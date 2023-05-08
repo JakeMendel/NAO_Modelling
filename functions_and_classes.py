@@ -122,7 +122,7 @@ def mean_daily(array: np.ndarray, delta_t: float, axis: int = -1):
 class City:
     def __init__(self,
                  N0s: np.ndarray,
-                 groups: list[Union[str,int]],
+                 groups: list[str],
                  compartments: str = 'SEIR',
                  mixing_LR: Optional[np.ndarray] = None):
         """
@@ -205,7 +205,7 @@ class City:
                       p_infectious,
                       p_recovery,
                       sim_step)
-        self.daily_flight_data(moving_average)
+        self.daily_flight_data()
     
     def __call__(self,
                  delta_t: float,
@@ -243,7 +243,7 @@ class City:
         self.municipal[:,self.R_index,:,simulation_step] = R + n_recovered
         self.community_infections[..., simulation_step] = self.community_infections[..., simulation_step-1] + n_exposed
 
-    def daily_flight_data(self, moving_avg = True):
+    def daily_flight_data(self, moving_avg = False):
         window = int(1/self.delta_t)
         
         if moving_avg:
@@ -361,215 +361,12 @@ class City:
                 axs[j].set_title(f"City {cityname}: {labels[j]}")
         show_fig(fig,figsavename)
     
-    def infections_at_simstep(self,
-                              community: str = 'municipal',
-                              sim_steps: Optional[np.ndarray] = None,
-                              time: Optional[np.ndarray] = None,
-                              included_compartments: str = 'EIR'):
-        """
-        Returns the number of people who are in included compartments at the given sim_steps
-        sim_steps: size (n_sims) the (different) simulation_step at which to evaluate number who have been exposed for each simulation
-        """
-        assert community in ['municipal','arrivals','departures']
-        flight_data = False if community == 'municipal' else True
-
-        assert (time is not None) != (sim_steps is not None), "Exactly one of time_indexes and times should be specified"
-        if sim_steps is None:
-            assert time is not None
-            sim_steps = self.times.searchsorted(time)
-        assert len(sim_steps) == self.n_sims, "len(times) must be n_sims"
-        assert sim_steps.dtype == np.int64
-        # values = np.zeros((self.n_sims,2,4))
-        to_include = np.array([l in included_compartments for l in self.compartments])
-        if community == 'municipal':
-            out = self.municipal[:,to_include,].sum(axis = (0,1))
-        elif community == 'arrivals':
-            out = self.arrivals_daily_avg[:,to_include,].sum(axis = (0,1))
-        else:
-            out = self.departures_daily_avg[:,to_include,].sum(axis = (0,1))
-        indices = sim_steps if not flight_data else sim_step_to_day(sim_steps, self.delta_t)
-        out = out[np.array(range(self.n_sims)),indices]
-        # for i,group in enumerate(self.groups):
-        #     out[group] = np.zeros(self.n_sims)
-        #     for j, compartment in enumerate(self.compartments):
-        #         # values[:,i,j] = self.data[group][compartment][np.array(range(self.n_sims)),time_indexes]
-        #         if compartment in to_include:
-        #             out[group] += self.data[group][compartment][np.array(range(self.n_sims)),time_indexes]
-        #     # out[group] = values[:,i].sum(axis = -1) - values[:,i,0]
-        #     assert out[group].shape == (self.n_sims,), "Logical Error Somewhere!"
-        # out['total'] = sum([out[group] for group in self.groups])
-        return out
-
-    def simstep_at_infections(self,
-                              community: str = 'municipal',
-                              infection_threshold: Union[int,float] = 0.01,
-                              included_groups: Optional[Union[list[int],list[str]]] = None,
-                              included_compartments: str = 'EIR'):
-        """
-        infection_threshold: if >= 1, the number of infections to cross the threshold. if < 1, the fraction of the population to cross the threshold
-        included_groups: the groups we care about for the threshold. Default: everyone. This argument is useful if we are only monitoring the normal people for example
-        included_compartments: the compartments that count as infections. We may only care about E or I, but default is EIR
-        out: shape (n_sims): the simulation step for each sim when the number of infections crosses the specifed threshold 
-        """
-        assert community in ['municipal','arrivals','departures']
-        flight_data = False if community == 'municipal' else True
-        if included_groups is None:
-            groups_to_include = np.ones(self.n_groups).astype(bool)
-        else:
-            if isinstance(included_groups[0],int):
-                groups_to_include = np.array([group in included_groups for group in range(self.n_groups)])
-            else:
-                groups_to_include = np.array([group in included_groups for group in self.groups])
-        compartments_to_include = np.array([compartment in included_compartments for compartment in self.compartments])
-
-        if community == 'municipal':
-            relevant_people = self.municipal[groups_to_include].sum(axis = 0)
-        elif community == 'arrivals':
-            relevant_people = self.arrivals_daily_avg[groups_to_include].sum(axis = 0)
-        else:
-            relevant_people = self.departures_daily_avg[groups_to_include].sum(axis = 0)
-        infected = relevant_people[compartments_to_include].sum(axis = 0)
-        indices = find_first_index(infected > infection_threshold) if infection_threshold > 1 else find_first_index(infected / relevant_people.sum(axis = 0) > infection_threshold)
-        return indices if not flight_data else day_to_sim_step(indices, self.delta_t)
-
     def peak_I_times(self):
         return self.municipal[:,self.I_index].sum(axis = 0).argmax(axis = -1)
 
     def __str__(self):
         raise ModuleNotFoundError
-
-    def hist_arrivals_at_municipal_threshold(self,
-                                             thresholds: Optional[list[float]] = None,
-                                             municipal_compartments: str = 'EI',
-                                             arrival_compartments: str = 'EI',
-                                             bins: int = 15,
-                                             fig = None, ax = None, figsavename: Optional[str] = None):
-        """
-        For each threshold in threshold, plot the distribution of fractions of infected and exposed people in the arrivals on the day that the fraction of infected and exposed people in the main city crosses the threshold
-        """
-        if thresholds is None:
-            thresholds = [1e-3,1e-2,1e-1]
-        n_plots = len(thresholds)
-        fig, axs = plt.subplots(n_plots,1,figsize=(15,30))
-        axs = force_iterable(axs)
-        for i,threshold in enumerate(thresholds):
-            sim_steps = self.simstep_at_infections('municipal', threshold, included_compartments=municipal_compartments)
-            arrival_infections = self.infections_at_simstep('arrivals', sim_steps,included_compartments=arrival_compartments)
-            arrival_total = self.infections_at_simstep('arrivals', sim_steps,included_compartments='SEIR')
-            # assert (arrival_infections.shape == (self.n_sims) and (arrival_total.shape == self.n_sims) 
-            infection_fraction = arrival_infections / arrival_total
-            axs[i].hist(infection_fraction, bins = bins, density = True, label = "Arrivals", color = self.data_cols['arrivals'])
-            axs[i].set_xlabel(f'Fraction of People that are {arrival_compartments}')
-            axs[i].set_ylabel('Probability Density')
-            axs[i].axvline(threshold,linewidth = 4, color = self.data_cols['municipal'], label = "Main City")
-            axs[i].legend()
-        show_fig(fig,figsavename)
-
-    def hist_municipal_at_arrivals_threshold(self,
-                                             thresholds: Optional[list[float]] = None,
-                                             municipal_compartments: str = 'EI',
-                                             arrival_compartments: str = 'EI',
-                                             bins: int = 15,
-                                             figsavename: Optional[str] = None):
-        """
-        For each threshold in threshold, plot the distribution of fractions of infected and exposed people in the main city on the day that the fraction of infected and exposed people in the arrivals crosses the threshold
-        TO DO: average over a few days, since arrival data is noisy and crosses low thresholds randomly very early. 
-        """
-        if thresholds is None:
-            thresholds = [1e-3,1e-2,1e-1]
-        n_plots = len(thresholds)
-        fig, axs = plt.subplots(n_plots,1,figsize=(15,30))
-        axs = force_iterable(axs)
-        assert fig is not None
-        for i,threshold in enumerate(thresholds):
-            sim_steps = self.simstep_at_infections('arrivals', threshold, included_compartments=municipal_compartments)
-            municipal_infections = self.infections_at_simstep('municipal', sim_steps,included_compartments=arrival_compartments)
-            municipal_total = self.infections_at_simstep('municipal', sim_steps,included_compartments='SEIR')
-            infection_fraction = municipal_infections / municipal_total
-            axs[i].hist(infection_fraction, bins = bins, density = True, label = "Main City", color=self.data_cols['municipal'])
-            axs[i].set_xlabel(f'Fraction of People that are {arrival_compartments}')
-            axs[i].set_ylabel('Probability Density')
-            axs[i].axvline(threshold,linewidth = 4, color = self.data_cols['arrivals'], label = "Arrivals")
-            axs[i].legend()
-        
-        show_fig(fig,figsavename)
     
-    def hists_at_time(self,
-                     times: Optional[np.ndarray] = None,
-                     threshold: float = 0.01,
-                     included_compartments: str = 'EI',
-                     included_data: list[str] = ['municipal', 'arrivals'],
-                     bins: int = 15,
-                     figsavename: Optional[str] = None,
-                     alpha: float = 0.6):
-        if times is None:
-            sim_step1 = self.simstep_at_infections(infection_threshold=threshold,
-                                                   included_compartments=included_compartments).mean()
-            sim_step2 = self.simstep_at_infections(community='arrivals',
-                                                   infection_threshold=threshold,
-                                                   included_compartments=included_compartments).mean()
-            sim_steps = np.array([sim_step1,sim_step2], dtype = np.int64)
-        else:
-            sim_steps = self.sim_steps_from_times(times)
-        assert isinstance(sim_steps, np.ndarray)
-        n_plots = len(sim_steps)
-        fig, axs = plt.subplots(n_plots,1,figsize=(15,10 * n_plots))
-        axs = force_iterable(axs)
-        assert all([community in ['municipal','arrivals','departures'] for community in included_data])
-
-        for i, sim_step in enumerate(sim_steps):
-            for community in included_data:
-                infections = self.infections_at_simstep(community,
-                                                     np.ones(self.n_sims,dtype = np.int64) * sim_step,
-                                                     included_compartments=included_compartments)
-                total = self.infections_at_simstep(community,
-                                                np.ones(self.n_sims,dtype = np.int64) * sim_step,
-                                                included_compartments='SEIR')
-                infection_fraction = infections/total
-                label_community = 'Main City' if community == 'municipal' else community
-                axs[i].hist(infection_fraction, bins = bins, density = True, label = f"{label_community}",alpha=alpha, color=self.data_cols[community])
-            axs[i].set_title(f"City {self.name} after {self.times_from_sim_steps(sim_step)} days")
-            axs[i].legend()
-            axs[i].set_xlabel(f'Fraction of People that are {included_compartments}')
-            axs[i].set_ylabel('Probability Density')
-        show_fig(fig,figsavename)
-
-    def _plot_avg_vals(self, included_data: list[str] = ['municipal', 'arrivals'],
-                      included_compartments = 'EIR',
-                      error_bars: str = 'std', fig = None, ax = None, figsavename: Optional[str] = None):
-        #Don't use this one!
-        if ax is None:
-            fig, ax = plt.subplots(1,1,figsize=(15,10))
-        assert fig is not None
-        assert all([community in ['municipal','arrivals','departures'] for community in included_data])
-        assert error_bars in ['std', 'IQR', 'None']
-
-        line_colours = ['blue', 'red', 'green']
-        for i,community in enumerate(set(included_data)):
-            if community == 'municipal':
-                values = self.municipal
-            elif community == 'arrivals':
-                values = self.arrivals
-            else:
-                values = self.departures
-            compartments_to_include = np.array([l in included_compartments for l in self.compartments])
-            values = values[:,compartments_to_include].sum(axis = (0,1)) / values.sum(axis = (0,1))
-            means = values.mean(axis = 0)
-            stds = values.std(axis = 0)
-            lower_quartile, median, upper_quartile = quartiles(values, axis = 0)
-            label = 'Main City' if community == 'municipal' else community
-            if error_bars == 'std':
-                ax.errorbar(self.times,means,yerr=stds, label = label, color = self.data_cols[community], ecolor = self.error_bar_cols[community])
-            if error_bars == 'IQR':
-                ax.errorbar(self.times,median,yerr=np.array([median - lower_quartile, upper_quartile - median]), label = label + ' median', color = self.data_cols[community], ecolor = self.error_bar_cols[community])
-                ax.plot(self.times,means, '--', color = self.data_cols[community], label = label + ' mean')
-            else:
-                ax.plot(self.times,means, label = label)
-        ax.set_xlabel('Time (days)')
-        ax.set_ylabel(f'Fraction of population in disease state {included_compartments}')
-        ax.legend()
-        show_fig(fig,figsavename)
-
     def sim_steps_from_times(self,times: Union[float,np.ndarray]):
         return np.argmin(np.abs(self.times-np.expand_dims(times,-1)),axis=-1)
     
@@ -624,7 +421,6 @@ class FrequentFlierCity(City):
         out += f'\nmixing_LR:\n {self.mixing_LR}'
         return out
 
-    # def select_travellers(self, daily_mixnumber: int, simulation_step: int):
 
 #%%
 class BasicCity(City):
@@ -648,100 +444,6 @@ class BasicCity(City):
     def select_travellers(self, daily_mixnumber: int, simulation_step: int):
         p_travel = 1 - np.exp(- self.delta_t * daily_mixnumber / self.N0)
         return np.random.binomial(self.municipal[...,simulation_step],p_travel)
-
-#%%
-class Plotter:
-    def __init__(self,
-                 cities: list[City],
-                 which_cities: Union[int, list[int]] = -1,
-                 data_types: Union[list[str],str] = ['municipal', 'arrivals'],
-                 included_compartments: Union[str,list[str]] = 'I',
-                 included_groups: Optional[Union[list[list[Union[str,int]]],list[Union[str,int]]]] = None,
-                 color_ordering: Optional[list[int]] = None,
-                 log = '',
-                 error_bars: Optional[str] = None,
-                 n_figs: int = 1,
-                 fig = None, ax = None):
-        n_plots = 1
-        for input in (which_cities, data_types, included_compartments):
-            if isinstance(input, list):
-                length = len(input)
-                assert (length == 1) or (n_plots == 1) or (length == n_plots)
-                if length > n_plots:
-                    n_plots = length
-            else:
-                continue
-        if isinstance(included_groups, list):
-            if isinstance(included_groups[0], list):
-                length = len(included_groups)
-                assert (length == 1) or (n_plots == 1) or (length == n_plots)
-                if length > n_plots:
-                    n_plots = length
-
-        if isinstance(which_cities,int):
-            which_cities = [which_cities] * n_plots
-        cities = [cities[which_city] for which_city in which_cities]
-        if isinstance(included_compartments,str):
-            included_compartments = [included_compartments] * n_plots
-        if isinstance(data_types, str):
-            data_types = [data_types] * n_plots
-
-        if included_groups is None:
-            included_groups = [city.groups for city in cities]
-        elif not isinstance(included_groups[0], list):
-            assert all([included_groups[i] in cities[i].groups for i in range(len(included_groups))]), print(f'all included_groups must be in {cities[0].groups}')
-            included_groups = [included_groups] * n_plots # type: ignore
-        if ax is None:
-            fig, ax = plt.subplots(n_figs,1, figsize = (15,10*n_figs))
-        axs = force_iterable(ax)
-        assert fig is not None
-        for ax in axs:
-            if 'x' in log:
-                ax.set_xscale('log')
-            if 'y' in log:
-                ax.set_yscale('log')
-
-        assert all([data_type in ['municipal','arrivals','departures'] for data_type in data_types])
-        if error_bars is not None:
-            assert error_bars in ['std', 'IQR', 'None']
-        if color_ordering is None:
-            color_ordering = list(range(n_plots))
-        assert len(color_ordering) == n_plots
-        compartments_to_include = [[l in included_compartments[i] for l in city.compartments] for i,city in enumerate(cities)]
-        groups_to_include = [[g in included_groups[i] for g in city.groups] for i,city in enumerate(cities)] # type: ignore
-        # assert type(included_groups) == list[list[Union[str,int]]]
-        # output = Plotter(n_plots, fig, axs, which_cities, data_types, included_compartments, included_groups, compartments_to_include, groups_to_include, color_ordering) # type: ignore
-        # return output
-        self.n_plots: int = n_plots
-        self.fig: plt.Figure = fig
-        self.axs: list[plt.Axes] = axs
-        self.ax: plt.Axes = axs[0]
-        self.which_cities: list[int] = which_cities
-        self.data_types: list[str] = data_types
-        self.included_compartments: list[str] = included_compartments
-        self.included_groups: list[list[Union[str,int]]] = included_groups #type: ignore
-        self.compartments_to_include: list[list[bool]] = compartments_to_include
-        self.groups_to_include: list[list[bool]] = groups_to_include
-        self.color_ordering: list[int] = color_ordering
-
-    def select_data(self, all_cities: list[City], plot_number: int, daily_flight_data: bool, fraction: bool = True):
-        cities = [all_cities[which_city] for which_city in self.which_cities]
-        city = cities[plot_number]
-        data_type = self.data_types[plot_number]
-        compartments = self.compartments_to_include[plot_number]
-        groups = self.groups_to_include[plot_number]
-        self.daily_data = False if data_type == 'municipal' or not daily_flight_data else True
-        if data_type == 'municipal':
-            data = city.municipal
-        elif data_type == 'arrivals':
-            data = city.arrivals_daily_avg if daily_flight_data else city.arrivals
-        else:
-            data = city.departures_daily_avg if daily_flight_data else city.departures
-        self.data = data[groups][:,compartments].sum(axis = (0,1))
-        if fraction:
-            self.data = self.data / np.maximum(data[groups].sum(axis = (0,1)),1e-10)
-        groups_string = list_to_str(self.included_groups[plot_number], ',')
-        self.label = f'City {self.which_cities[plot_number]}, Group(s) {groups_string}, \nCompartments {self.included_compartments[plot_number]}, {data_type}'
 
 #%%
 def default_axis_order():
@@ -886,6 +588,8 @@ def plotprep(log = '',
             ax.set_yscale('log')
     return fig, axs
 
+#%%
+
 def hists_at_time(data: SimData,
                   time: float,
                   filters: list[dict],
@@ -989,7 +693,7 @@ def plot_avg_vals(datasets: Union[SimData, dict[str,SimData]],
             total = dataset[total_filter].sum(axis = ('cities','datatypes','groups','compartments'))
             values = values/ (total + 1e-10)
 
-
+            assert isinstance(values, SimData)
             means = values.mean(axis = 'sims').array
             stds = values.std(axis = 'sims').array
             lower_quartile, median, upper_quartile = values.quartiles(axis='sims',SimData_out=False)
@@ -1018,6 +722,62 @@ def plot_avg_vals(datasets: Union[SimData, dict[str,SimData]],
     ax.set_ylabel(f'Fraction of population')
     if error_bars == 'IQR':
         plt.plot([],[],linestyle = '--',color='black',label = 'Means')
+    ax.legend()
+    show_fig(fig, figsavename)
+
+def plot_infection_ratio(dataset: SimData,
+                         filters: list[dict],
+                         x_axis_type: str = 'times',
+                         max_first: float = 0.1,
+                         min_first: Optional[float] = None,
+                         n_points: int = 100,
+                         log: str = '',
+                         error_bars: str = 'std',
+                         doubling_time: Optional[float] = None,
+                         figsavename: Optional[str] = None):
+    #Filters in format: denominator, numerator
+    assert x_axis_type in ['times', 'scaled_times', 'total_infections']
+    assert error_bars in ['std', 'IQR', 'None']
+    fig, axs = plotprep(log)
+    ax = axs[0]
+    if x_axis_type == 'total_infections':
+        total_infections = dataset[create_filter(datatypes=['municipal'],compartments=['E','I','R'])]
+        total_infections = total_infections.sum(axis = ('cities','datatypes','groups','compartments'))
+        x_axis = total_infections.mean(axis='sims').array
+        x_std = total_infections.std(axis='sims').array
+    elif x_axis_type == 'times':
+        x_axis = np.array(dataset.values_present['times'])
+        x_std = 0
+    else:
+        assert isinstance(doubling_time, float), 'Specify Doubling time to use scaled_times!'
+        x_axis = np.array(dataset.values_present['times']) / doubling_time
+        x_std = 0
+    data_1, data_2 = (dataset[f] for f in filters)
+    values_array = data_2.array/(data_1.array + 1e-10)
+    values = SimData(values_array, data_2.values_present)
+    assert isinstance(values, SimData)
+    means = values.mean(axis = 'sims').array.squeeze()
+    stds = values.std(axis = 'sims').array.squeeze()
+    lower_quartile, median, upper_quartile = values.quartiles(axis='sims',SimData_out=False)
+    if error_bars == 'std':
+        ax.errorbar(x_axis,means,yerr=stds, xerr = x_std)
+    elif error_bars == 'IQR':
+        ax.errorbar(x_axis,median,yerr=np.array([median - lower_quartile, upper_quartile - median]), label = 'median')
+        ax.plot(x_axis,means, '--', color = 'black', label = 'mean')
+        ax.plot()
+    else:
+        ax.plot(x_axis,means)
+    if x_axis_type == 'total_infections':
+        xlabel = 'Total Infections'
+    elif x_axis_type == 'times':
+        xlabel = 'Time (days)'
+    else:
+        xlabel = 'Doubling Times'
+    ax.set_xlabel(xlabel)
+    same_categories = {k:v for k,v in filters[0].items() if k in filters[1].keys() and v == filters[1][k]}
+    uniques = [{k:v for k,v in f.items() if k not in same_categories.keys()} for f in filters]
+    ylabel = f'{dict_to_str(same_categories)}. Ratio of {dict_to_str(uniques[1])} / {dict_to_str(uniques[0])}'
+    ax.set_ylabel(ylabel)
     ax.legend()
     show_fig(fig, figsavename)
 
@@ -1515,7 +1275,7 @@ class Travel(City):
     
     def plot_sims(self,
                   to_shift: bool = True, #change to shift_by: Optional[Union[int,str]] = None, assert shift_by in city.groups
-                  included_cities: Optional[Union[list[int],list[str]]] = None,
+                  included_cities: Optional[list[int]] = None,
                   separate_groups: bool = True,
                   figsavename: Optional[str] = None,
                   moving_avg = False,
@@ -1559,341 +1319,6 @@ class Travel(City):
                  n_sims: int = 100,
                  moving_avg = True):
         return self.multiple_sims(delta_t, epidemic_time, disease, I0s, n_sims, moving_avg = moving_avg)
-             
-    def plot_avg_vals_old(self, which_cities: Union[int, list[int]] = -1,
-                      data_types: Union[list[str],str] = ['municipal', 'arrivals'],
-                      included_compartments: Union[str,list[str]] = 'I',
-                      included_groups: Optional[Union[list[list[Union[str,int]]],list[Union[str,int]]]] = None,
-                      x_axis_type: str = 'times',
-                      daily_flight_data = True,
-                      error_bars: str = 'std',
-                      color_ordering: Optional[list[int]] = None,
-                      log = '',
-                      figsavename: Optional[str] = None):
-        """
-        Args:
-
-            TODO
-        """
-        n_plots = 1
-        for input in (which_cities, data_types, included_compartments):
-            if isinstance(input, list):
-                length = len(input)
-                assert (length == 1) or (n_plots == 1) or (length == n_plots)
-                if length > n_plots:
-                    n_plots = length
-            else:
-                continue
-        if isinstance(included_groups, list):
-            if isinstance(included_groups[0], list):
-                length = len(included_groups)
-                assert (length == 1) or (n_plots == 1) or (length == n_plots)
-                if length > n_plots:
-                    n_plots = length
-
-        if isinstance(which_cities,int):
-            which_cities = [which_cities] * n_plots
-        cities = [self.cities[which_city] for which_city in which_cities]
-        if isinstance(included_compartments,str):
-            included_compartments = [included_compartments] * n_plots
-        if isinstance(data_types, str):
-            data_types = [data_types] * n_plots
-
-        if included_groups is None:
-            included_groups = [city.groups for city in cities]
-        elif not isinstance(included_groups[0], list):
-            included_groups = [included_groups] * n_plots # type: ignore
-
-        fig, ax = plt.subplots(1,1,figsize=(15,10))
-        if 'x' in log:
-            ax.set_xscale('log')
-        if 'y' in log:
-            ax.set_yscale('log')
-            
-        assert all([data_type in ['municipal','arrivals','departures'] for data_type in data_types])
-        assert x_axis_type in ['times', 'scaled_times', 'total_infections']
-        assert error_bars in ['std', 'IQR', 'None']
-        if color_ordering is None:
-            color_ordering = list(range(n_plots))
-        assert len(color_ordering) == n_plots
-        
-        window = int(1/cities[0].delta_t)
-
-        compartments_to_include = [[l in included_compartments[i] for l in city.compartments] for i,city in enumerate(cities)]
-        groups_to_include = [[g in included_groups[i] for g in city.groups] for i,city in enumerate(cities)] # type: ignore
-
-        if x_axis_type == 'total_infections':
-            total_infections = self.cities[0].municipal[:,1:].sum(axis = (0,1))
-            for city in self.cities[1:]:
-                total_infections += city.municipal[:,1:].sum(axis = (0,1))
-            total_infections_daily = total_infections.reshape((self.n_sims,
-                                                               self.simulation_steps//window,
-                                                               window)).mean(axis = -1)
-            x_axis = total_infections.mean(axis = 0)
-            x_std = total_infections.std(axis = 0)
-            daily_x_axis = total_infections_daily.mean(axis = 0)
-            daily_x_std = total_infections_daily.std(axis = 0)
-        else:
-            if x_axis_type == 'times':
-                x_axis = self.times
-            else:
-                x_axis = self.scaled_times
-            daily_x_axis = x_axis.reshape((self.simulation_steps//window, window)).mean(axis = -1)
-            x_std = 0
-            daily_x_std = 0
-        
-
-        for i in range(n_plots):
-            city = cities[i]
-            data_type = data_types[i]
-            compartments = compartments_to_include[i]
-            groups = groups_to_include[i]
-
-            daily_data = False if data_type == 'municipal' or not daily_flight_data else True
-            if data_type == 'municipal':
-                values = city.municipal
-            elif data_type == 'arrivals':
-                values = city.arrivals_daily_avg if daily_flight_data else city.arrivals
-            else:
-                values = city.departures_daily_avg if daily_flight_data else city.departures
-            values = values[groups][:,compartments].sum(axis = (0,1)) / np.maximum(values[groups].sum(axis = (0,1)),1e-10)
-            means = values.mean(axis = 0)
-            stds = values.std(axis = 0)
-            lower_quartile, median, upper_quartile = quartiles(values, axis = 0)
-
-            if daily_data:
-                current_x_axis = daily_x_axis
-                current_x_std = daily_x_std
-            else:
-                current_x_axis = x_axis
-                current_x_std = x_std
-            groups_string = list_to_str(included_groups[i], ',') #type: ignore
-            label = f'City {which_cities[i]}, Group(s) {groups_string}, \nCompartments {included_compartments[i]}, {data_type}'
-            if error_bars == 'std':
-                ax.errorbar(current_x_axis,means,yerr=stds, xerr = current_x_std, label = label, color = self.colors[color_ordering[i]], ecolor = self.ecolors[color_ordering[i]])
-            elif error_bars == 'IQR':
-                ax.errorbar(current_x_axis,median,yerr=np.array([median - lower_quartile, upper_quartile - median]), label = label + ' median', color = self.colors[color_ordering[i]], ecolor = self.ecolors[color_ordering[i]])
-                ax.plot(current_x_axis,means, '--', color = self.colors[color_ordering[i]])
-                ax.plot()
-            else:
-                ax.plot(current_x_axis,means, color = self.colors[color_ordering[i]], label = label)
-        
-        if x_axis_type == 'total_infections':
-            ax.set_xlabel('Total Infections')
-        elif x_axis_type == 'times':
-            ax.set_xlabel('Time (days)')
-        else:
-            ax.set_xlabel('Doubling Times')
-        ax.set_ylabel(f'Fraction of population')
-        if error_bars == 'IQR':
-            plt.plot([],[],linestyle = '--',color='black',label = 'Means')
-            ax.legend()
-        else:
-            ax.legend()
-        show_fig(fig, figsavename)
-
-    def plot_infection_ratio(self,
-                             first_city = 0,
-                             second_city = -1,
-                             x_axis_type: str = 'infections',
-                             first_compartments: str = 'I',
-                             second_compartments: Optional[str] = None,
-                             first_groups: Optional[Union[list, np.ndarray]] = None,
-                             second_groups: Optional[Union[list, np.ndarray]] = None,
-                             max_first: float = 0.1,
-                             min_first: Optional[float] = None,
-                             n_points: int = 100,
-                             log: str = '',
-                             error_bars: str = 'std',
-                             figsavename: Optional[str] = None):
-        fig, ax = plt.subplots(1,1,figsize=(20,10))
-        assert (0 <= max_first) and (max_first <= 1)
-        assert x_axis_type in ['infections','times']
-        assert error_bars in ['std', 'IQR', 'None']
-        if second_compartments is None:
-            second_compartments = first_compartments
-            
-        city_1 = self.cities[first_city]
-        city_2 = self.cities[second_city]
-        
-        if first_groups is None:
-            first_groups = city_1.groups
-        if second_groups is None:
-            second_groups = city_1.groups
-
-        first_compartments_to_include = np.array([l in first_compartments for l in city_1.compartments])
-        second_compartments_to_include = np.array([l in second_compartments for l in city_2.compartments])
-        first_groups_to_include = np.array([g in first_groups for g in city_1.groups])
-        second_groups_to_include = np.array([g in second_groups for g in city_2.groups])
-        data_1 = city_1.municipal[first_groups_to_include][:,first_compartments_to_include].sum(axis = (0,1))
-        data_2 = city_2.municipal[second_groups_to_include][:,second_compartments_to_include].sum(axis = (0,1))
-
-        if min_first is None:
-            min = np.min(data_1)
-        else:
-            min = min_first * city_1.N0
-        
-        if 'x' in log:
-            ax.set_xscale('log')
-        if 'y' in log:
-            ax.set_yscale('log')
-        
-        groupstring1 = list_to_str(first_groups,',')
-        groupstring2 = list_to_str(second_groups,',')
-        in_group_text_1 = '' if len(city_1.groups) == 1 else f'in Group(s) {groupstring1}'
-        in_group_text_2 = '' if len(city_2.groups) == 1 else f'in Group(s) {groupstring2}'
-        ax.set_ylabel(f'{second_compartments} {in_group_text_1} in City {second_city} / {first_compartments} {in_group_text_2} in City {first_city}')
-
-        if x_axis_type == 'infections':
-            assert np.all(np.max(data_1, axis = -1) >= max_first * city_1.N0), print(np.max(data_1, axis = -1), max_first * city_1.N0)
-            ax.set_xlabel(f'{first_compartments} in City {first_city}')
-            x_axis = np.exp(np.linspace(np.log(min),np.log(city_1.N0 * max_first), n_points)) if 'x' in log else np.linspace(min,city_1.N0 * max_first, n_points)
-            out_vals = np.zeros((self.n_sims, n_points))
-            for i,val in enumerate(x_axis):
-                sim_steps = city_1.simstep_at_infections(infection_threshold=val, included_compartments=first_compartments)
-                out_vals[:,i] = city_2.infections_at_simstep(sim_steps = sim_steps, included_compartments=second_compartments)/val
-        else:
-            ax.set_xlabel('Time (days)')
-            out_vals = data_2/data_1
-            x_axis = city_1.times
-        
-        means = out_vals.mean(axis = 0)
-        stds = out_vals.std(axis = 0)
-        lower_quartile, median, upper_quartile = quartiles(out_vals, axis = 0)
-
-        if error_bars == 'std':
-            ax.errorbar(x_axis,
-                        means,
-                        yerr=stds,
-                        color = 'blue',
-                        ecolor = 'cornflowerblue')
-        elif error_bars == 'IQR':
-            ax.errorbar(x_axis,
-                        median,
-                        yerr=np.array([median - lower_quartile, upper_quartile - median]),
-                        color = 'blue',
-                        ecolor = 'cornflowerblue',
-                        label = 'median')
-            ax.plot(x_axis, means, '--', color = 'blue', label = 'mean')
-            ax.legend()
-        else:
-            ax.plot(x_axis, means, color = 'blue')
-        show_fig(fig,figsavename)
-
-    def hists_at_time(self,
-                      times: Union[float,np.ndarray],
-                      which_cities: Union[int, list[int]] = -1,
-                      data_types: Union[list[str],str] = ['municipal', 'arrivals'],
-                      included_compartments: Union[str,list[str]] = 'I',
-                      included_groups: Optional[Union[list[list[Union[str,int]]],list[Union[str,int]]]] = None,
-                    #   threshold: float = 0.01,
-                      fraction: bool = True,
-                      bins: int = 50,
-                      color_ordering: Optional[list[int]] = None,
-                      log: str = '',
-                      daily_flight_data: bool = True,
-                      figsavename: Optional[str] = None,
-                      alpha: float = 0.6,
-                      density: bool = True):
-        chosen_simsteps = self.sim_steps_from_times(np.array(times))
-        plotter = Plotter(self.cities,
-                          which_cities,
-                          data_types,
-                          included_compartments,
-                          included_groups,
-                          color_ordering,
-                          log,
-                          n_figs = len(chosen_simsteps))
-
-        for i, sim_step in enumerate(chosen_simsteps):
-            for j,plot_number in enumerate(range(plotter.n_plots)):
-                plotter.select_data(self.cities, plot_number, daily_flight_data, fraction)
-                if plotter.daily_data:
-                    sim_step = sim_step_to_day(sim_step, self.delta_t)
-                data = plotter.data[...,sim_step]
-                assert len(data.shape) == 1
-                plotter.axs[i].hist(data, bins = bins, density = density, label = plotter.label,alpha=alpha, color=self.colors[plotter.color_ordering[j]])
-            plotter.axs[i].set_title(f"Distributions after {self.times_from_sim_steps(sim_step)} days")
-            plotter.axs[i].legend()
-            xlabel = 'Fraction of Population' if fraction else 'Number of People'
-            ylabel = 'Probability Density' if density else 'Number of sims'
-            plotter.axs[i].set_xlabel(xlabel)
-            plotter.axs[i].set_ylabel('Probability Density')
-        show_fig(plotter.fig,figsavename)
-    
-    def plot_avg_vals(self, which_cities: Union[int, list[int]] = -1,
-                      data_types: Union[list[str],str] = ['municipal', 'arrivals'],
-                      included_compartments: Union[str,list[str]] = 'I',
-                      included_groups: Optional[Union[list[list[Union[str,int]]],list[Union[str,int]]]] = None,
-                      x_axis_type: str = 'times',
-                      daily_flight_data = True,
-                      error_bars: str = 'std',
-                      color_ordering: Optional[list[int]] = None,
-                      log = '',
-                      figsavename: Optional[str] = None):
-        assert x_axis_type in ['times', 'scaled_times', 'total_infections']
-        assert error_bars in ['std', 'IQR', 'None']
-        plotter = Plotter(self.cities,
-                          which_cities,
-                          data_types,
-                          included_compartments,
-                          included_groups,
-                          color_ordering,
-                          log,
-                          error_bars)
-        
-        if x_axis_type == 'total_infections':
-            total_infections = self.cities[0].municipal[:,1:].sum(axis = (0,1))
-            for city in self.cities[1:]:
-                total_infections += city.municipal[:,1:].sum(axis = (0,1))
-            total_infections_daily = mean_daily(total_infections, self.delta_t)
-            x_axis = total_infections.mean(axis = 0)
-            x_std = total_infections.std(axis = 0)
-            daily_x_axis = total_infections_daily.mean(axis = 0)
-            daily_x_std = total_infections_daily.std(axis = 0)
-        
-        else:
-            if x_axis_type == 'times':
-                x_axis = self.times
-            else:
-                x_axis = self.scaled_times
-            daily_x_axis = mean_daily(x_axis, self.delta_t)
-            x_std = 0
-            daily_x_std = 0
-        
-        for plot_number in range(plotter.n_plots):
-            plotter.select_data(self.cities, plot_number, daily_flight_data)
-            if plotter.daily_data:
-                current_x_axis = daily_x_axis
-                current_x_std = daily_x_std
-            else:
-                current_x_axis = x_axis
-                current_x_std = x_std
-            means = plotter.data.mean(axis = 0)
-            stds = plotter.data.std(axis = 0)
-            lower_quartile, median, upper_quartile = quartiles(plotter.data, axis = 0)
-            if error_bars == 'std':
-                plotter.ax.errorbar(current_x_axis,means,yerr=stds, xerr = current_x_std, label = plotter.label, color = self.colors[plotter.color_ordering[plot_number]], ecolor = self.ecolors[plotter.color_ordering[plot_number]])
-            elif error_bars == 'IQR':
-                plotter.ax.errorbar(current_x_axis,median,yerr=np.array([median - lower_quartile, upper_quartile - median]), label = plotter.label + ' median', color = self.colors[plotter.color_ordering[plot_number]], ecolor = self.ecolors[plotter.color_ordering[plot_number]])
-                plotter.ax.plot(current_x_axis,means, '--', color = self.colors[plotter.color_ordering[plot_number]])
-                plotter.ax.plot()
-            else:
-                plotter.ax.plot(current_x_axis,means, color = self.colors[plotter.color_ordering[plot_number]], label = plotter.label)
-        if x_axis_type == 'total_infections':
-            plotter.ax.set_xlabel('Total Infections')
-        elif x_axis_type == 'times':
-            plotter.ax.set_xlabel('Time (days)')
-        else:
-            plotter.ax.set_xlabel('Doubling Times')
-        plotter.ax.set_ylabel(f'Fraction of population')
-        if error_bars == 'IQR':
-            plt.plot([],[],linestyle = '--',color='black',label = 'Means')
-            plotter.ax.legend()
-        else:
-            plotter.ax.legend()
-        show_fig(plotter.fig, figsavename)
-
 #%%
 class ReturnHomeCity(City):
     def __init__(self,
@@ -1990,4 +1415,3 @@ class HomogeneousNetwork(Travel):
         mixmatrix = (np.ones((n_cities,n_cities)) - np.identity(n_cities)).astype(np.int64) * mixnumber
         super().__init__(cities, mixmatrix)
 
-#%%

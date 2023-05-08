@@ -11,20 +11,23 @@ from scipy import special
 from itertools import chain
 
 #%%
-mpl.style.use('seaborn-v0_8')
-mpl.rcParams['figure.figsize'] = (15,10)
-fontsize = 20
-mpl.rcParams['font.size'] = fontsize
-mpl.rcParams['xtick.labelsize'] = fontsize
-mpl.rcParams['ytick.labelsize'] = fontsize
-mpl.rcParams['legend.fontsize'] = fontsize
-mpl.rcParams['axes.titlesize'] = fontsize
-mpl.rcParams['axes.labelsize'] = fontsize
+for i in range(2):
+    mpl.style.use('seaborn-v0_8')
+    fontsize = 15
+    mpl.rcParams['font.size'] = fontsize
+    mpl.rcParams['xtick.labelsize'] = fontsize
+    mpl.rcParams['ytick.labelsize'] = fontsize
+    mpl.rcParams['legend.fontsize'] = fontsize
+    mpl.rcParams['axes.titlesize'] = fontsize
+    mpl.rcParams['axes.labelsize'] = fontsize
+    mpl.rcParams['figure.figsize'] = (20,10)
+    plt.plot(range(5))
+    plt.title('Testing')
 
 #%%
 #Create Plot of Advantage vs Mixing Rate
 
-mixing_rates = np.logspace(0,6,3,base=10)
+mixing_rates = np.logspace(0,6,6,base=10)
 delta_t = 0.04
 epidemic_time = 70
 I_0 = 100
@@ -36,7 +39,7 @@ basic_datasets = {}
 for mixing_rate in mixing_rates:
     key = f'Mixing_Rate: {int(mixing_rate)}'
     sim = F.HomogeneousNetwork(F.BasicCity,2,mixnumber=mixing_rate)
-    dataset = sim.multiple_sims(delta_t, epidemic_time,F.measles,I_0,n_sims,moving_avg = False)
+    dataset = sim.multiple_sims(delta_t, epidemic_time,F.measles,I_0,n_sims, moving_avg = False)
     daily = dataset.daily_avg()
     basic_datasets[key] = daily
     print(f'Mixing_Rate {int(mixing_rate)} complete')
@@ -45,6 +48,13 @@ thresholds = np.array([0.2])
 calculation = F.differences_vs_threshold_data(basic_datasets, filters, thresholds)
 
 F.differences_vs_variable_final_img(basic_datasets, list(mixing_rates), calculation,filters=filters,old_thresholds = thresholds, new_thresholds = thresholds, figsavename = figsavename)
+#%%
+#Create Plot to compare E to I in the first city over time.
+data = list(basic_datasets.values())[0]
+f1 = F.create_filter([0],['municipal'],compartments=['I'])
+f2 = F.create_filter([0],['municipal'],compartments=['E'])
+F.plot_infection_ratio(data,[f1,f2], 'times')
+
 
 #%%
 #Create Plot of Advantage vs Threshold Ratio for a range of airplane thresholds
@@ -59,7 +69,7 @@ airport_thresholds = np.array([0.2,0.02,0.001])
 error_bars = 'std'
 filters = F.create_arrival_municipal_filter()
 
-test = F.HomogeneousNetwork(F.BasicCitry, 2, mixnumber=mixnumber)
+test = F.HomogeneousNetwork(F.BasicCity, 2, mixnumber=mixnumber)
 testdata = test.multiple_sims(delta_t, epidemic_time,F.measles,I_0,n_sims)
 testdata = testdata.daily_avg()
 
@@ -88,3 +98,4 @@ for mixing_LR in mixing_LRs:
 
 threshold_data = F.differences_vs_threshold_data(datasets, filters, thresholds)
 F.differences_vs_variable(datasets,mixing_LRs,threshold_data,filters,thresholds,thresholds,log= 'x', x_name='Mixing Likelihood Ratio')
+# %%
