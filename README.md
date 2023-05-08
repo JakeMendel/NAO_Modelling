@@ -103,3 +103,6 @@ To visualise simulations, I have implemented a number of plotting functions and 
     - In `threshold_ratio_diffs`, a pair of lists of thresholds are created from a pair of upper and lower limits, and a number of points to include in the list. (time detection for filter 0 and the $i$th threshold in the first list) - (time detection for filter 1 and the $i$th threshold in the second list) are plotted against the ratio of these two thresholds for all $i$.
     - In `differences_vs_threshold`, the thresholds are assumed to be the same for the two subgroups specified by the two filters, and the time difference is plotted against the value of this threshold. A dict of `SimData` is passed to this function and one curve is produced for each `SimData` in the dict.
 - `differences_vs_variable` is similar to `differences_vs_threshold`. In this case, the dict of `SimData` should be data from a family of simulations that are run for a range of values of one parameter. Then, for each threshold given, the difference in time to detection for the two groups is plotted against the value of that parameter, assuming that both subpopulations specified by the two filters have the same threshold.
+
+# Example script
+An example script for running a few simulations and reproducing some of the images in the report can be found in images_code.py
