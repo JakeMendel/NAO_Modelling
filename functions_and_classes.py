@@ -124,7 +124,7 @@ class City:
                  N0s: np.ndarray,
                  groups: list[str],
                  compartments: str = 'SEIR',
-                 mixing_LR: Optional[np.ndarray] = None):
+                 group_LR: Optional[np.ndarray] = None):
         """
         Initializes the City object.
 
@@ -132,7 +132,7 @@ class City:
         - N0s (np.ndarray): An array of initial population sizes for each group.
         - groups (list): A list representing the groups in the model.
         - compartments (str): A string representing the compartment model used in the model. Currently only 'SEIR' is supported.
-        - mixing_LR (np.ndarray): An optional array representing the matrix of mixing likelihood ratios for groups i and j. All diagonal elements should be one.
+        - group_LR (np.ndarray): An optional array representing the matrix of inter-group interaction likelihood ratios for groups i and j. All diagonal elements should be one.
 
         Returns:
         - None
@@ -150,13 +150,13 @@ class City:
         self.model_type = compartments
         self.compartments = [l for l in compartments]
 
-        # Check and set the mixing_LR matrix
-        if mixing_LR is None:
-            mixing_LR = np.identity(self.n_groups)
-        assert mixing_LR.shape == (self.n_groups, self.n_groups)
-        assert np.all(mixing_LR.diagonal() == 1)
-        assert np.all(mixing_LR == mixing_LR.T)
-        self.mixing_LR = mixing_LR
+        # Check and set the group_LR matrix
+        if group_LR is None:
+            group_LR = np.identity(self.n_groups)
+        assert group_LR.shape == (self.n_groups, self.n_groups)
+        assert np.all(group_LR.diagonal() == 1)
+        assert np.all(group_LR == group_LR.T)
+        self.group_LR = group_LR
 
         # Set the indices of the compartments
         self.S_index = self.compartments.index('S')
@@ -229,8 +229,8 @@ class City:
         R = self.municipal[:,self.R_index,:,simulation_step-1]
 
 
-        modified_I = einsum('group1 group2, group2 n_sims -> group1 n_sims', self.mixing_LR, I)
-        modified_N = einsum('group1 group2, group2 n_sims -> group1 n_sims', self.mixing_LR, N)
+        modified_I = einsum('group1 group2, group2 n_sims -> group1 n_sims', self.group_LR, I)
+        modified_N = einsum('group1 group2, group2 n_sims -> group1 n_sims', self.group_LR, N)
         exposure_rate = beta * modified_I/modified_N
         p_exposure = 1 - np.exp(- delta_t * exposure_rate)
         n_exposed = np.random.binomial(S, p_exposure)
@@ -380,12 +380,12 @@ class FrequentFlyerCity(City):
                  frequent_flyer_frac: float = 0.1,
                  p_ff: Optional[float] = None,
                  flying_LR: Optional[float] = None,
-                 mixing_LR: float = 5,
+                 group_LR: float = 5,
                  compartments: str = 'SEIR'):
-        mixing_LR_matrix = homogeneous_LR_matrix(2,1/mixing_LR)
+        group_LR_matrix = homogeneous_LR_matrix(2,1/group_LR)
         self.groups = ['normal', 'frequent_flyers']
         self.N0s = np.array([N0 * (1 - frequent_flyer_frac), N0 * frequent_flyer_frac],dtype = np.int64)
-        super().__init__(self.N0s, self.groups, compartments, mixing_LR_matrix)
+        super().__init__(self.N0s, self.groups, compartments, group_LR_matrix)
         self.frequent_flyer_frac = frequent_flyer_frac
         if (p_ff is None) and (flying_LR is None):
             flying_LR = 10
@@ -418,7 +418,7 @@ class FrequentFlyerCity(City):
         out += f'\nfrequent_flyer_frac:\n {self.frequent_flyer_frac}'
         out += f'\nflying_LR:\n {self.flying_LR}'
         out += f'\np_ff:\n {self.p_ff}'
-        out += f'\nmixing_LR:\n {self.mixing_LR}'
+        out += f'\ngroup_LR:\n {self.group_LR}'
         return out
 
 
@@ -427,10 +427,10 @@ class BasicCity(City):
     def __init__(self,
                  N0: int = 10**6,
                  compartments: str = 'SEIR'):
-        mixing_LR_matrix = np.array([[1.]])
+        group_LR_matrix = np.array([[1.]])
         self.groups = ['normal']
         self.N0s = np.array([N0],dtype = np.int64)
-        super().__init__(self.N0s, self.groups, compartments, mixing_LR_matrix)
+        super().__init__(self.N0s, self.groups, compartments, group_LR_matrix)
     
     def initial_conditions(self):
         self.municipal[0,2,:,0] = self.I0
@@ -1089,7 +1089,9 @@ def differences_vs_variable_final_img(datasets: dict[str,SimData],
                              log: str = 'x',
                              error_bars: str = 'std',
                              legend_labels: Optional[list[str]] = None,
-                             x_name: str = 'Daily Mixing Rate',
+                             x_name: str = 'Mixing Rate per Day',
+                             include_legend = False,
+                             with_plateau = True,
                              figsavename: Optional[str] = None):
     assert error_bars in ['std', 'IQR', 'None']
     assert len(filters) == 2
@@ -1101,23 +1103,26 @@ def differences_vs_variable_final_img(datasets: dict[str,SimData],
     ax = axs[0]
     threshold_idxs = [np.argmin(np.abs(old_thresholds - t)) for t in new_thresholds]
     thresholds = old_thresholds[threshold_idxs]
-    print(thresholds)
     calculated_data = calculated_data[...,np.array(threshold_idxs)]
     means, medians, stds, upper_quartiles, lower_quartiles = tuple(calculated_data)
 
     if legend_labels is None:
         legend_labels = ["Threshold: {:.0e}".format(threshold) for threshold in thresholds]
     for i, threshold in enumerate(thresholds):
+        x = variables if with_plateau else [v for v in variables if v > 1/threshold]
+
         col_idx = i%len(colors)
         if error_bars == 'None': 
-            ax.plot(variables, means[:,i], label = legend_labels[i])
+            ax.plot(x, means[:,i][-len(x):], label = legend_labels[i])
         else:
             errors = np.array([medians[:,i]-lower_quartiles[:,i], upper_quartiles[:,i]-medians[:,i]]) if error_bars == 'IQR' else stds[:,i] #type: ignore
             y = means[:,i] if error_bars == 'std' else medians[:,i] #type: ignore
-            plt.errorbar(variables, y, errors, color = colors[col_idx], ecolor = ecolors[col_idx], label = legend_labels[i])
+            plt.errorbar(x, y[-len(x):], errors[-len(x):], color = colors[col_idx], ecolor = ecolors[col_idx], label = legend_labels[i])
     filters_str = [dict_to_str(filter) for filter in filters]
-    ax.set_xlabel('Mixing Rate per Day \nDetection threshold is chosen to be 0.2 for both detection approaches')
+    ax.set_xlabel(x_name)
     ax.set_ylabel('Advantage of using Airplane Detection (days)')
+    if include_legend:
+        ax.legend()
     show_fig(fig, figsavename)
 
 def create_filter(cities: Optional[Iterable[Union[str,int]]]=None,
@@ -1326,7 +1331,7 @@ class ReturnHomeCity(City):
                  this_city_name: Union[int,str],
                  mixmatrix: np.ndarray,
                  N0: int = 10**6,
-                 mixing_LR: float = 0.1,
+                 group_LR: float = 0.1,
                  trip_length: int = 10,
                  p_go_home: float = 0.9,
                  p_continue_travel: float = 0.05,
@@ -1338,8 +1343,8 @@ class ReturnHomeCity(City):
         assert self.N0s.sum() == N0
         self.groups = city_names
         self.n_groups = len(city_names)
-        mixing_LR_matrix = homogeneous_LR_matrix(self.n_groups, mixing_LR)
-        super().__init__(self.N0s, self.groups, compartments, mixing_LR_matrix)
+        group_LR_matrix = homogeneous_LR_matrix(self.n_groups, group_LR)
+        super().__init__(self.N0s, self.groups, compartments, group_LR_matrix)
         self.trip_length = trip_length
         self.p_go_home = p_go_home
         self.p_continue_travel = p_continue_travel
