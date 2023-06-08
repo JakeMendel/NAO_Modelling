@@ -18,7 +18,7 @@ Eventually, some of the people who are travelling to other cities from the city 
 
 The details of who travels and when is variable:
 - In a `BasicCity` network, everyone is equally likely to travel all the time.
-- In a `FrequentFlierCity` network, there are two classes of people: normal people and frequent fliers. Frequent fliers (air stewards, businesspeople etc) fly more often than normal, and they are more likely to interact with each other than with other people
+- In a `FrequentFlyerCity` network, there are two classes of people: normal people and frequent Flyers. Frequent Flyers (air stewards, businesspeople etc) fly more often than normal, and they are more likely to interact with each other than with other people
 - In a `ReturnHomeCity` network, everyone has a home city. When people leave their home city, they have a small chance of staying there and a small chance of travelling on to another city, but a high chance returning to their home city within a week or two.
 
 Each `City` is initialised with the following parameters:
@@ -27,11 +27,11 @@ Each `City` is initialised with the following parameters:
 - `mixing_LR`: a matrix of size `(n_groups, n_groups)`, with diagonal entries equal to 1 and off-diagonal entries between 0 and 1. The i,jth component is the likelihood of a member of group i having close contact with a member of group j relative to another member of group i.
 
 More sophisticated cities also have extra parameters. In `FrequentFlyerCity`, the other parameters are:
-- `frequent_flier_frac`: the fraction of the population that is in the frequent flyer class of people 
-- `flying_LR`: The ratio between the likelihood of a frequent flier flying and a normal person flying on a given day.
-  - Alternatively, `p_ff` can be specified: the probability that a given person on a plane is a frequent flier. Any two of `frequent_flier_frac, flying_LR, p_ff` can be used to calculate the third according to:
+- `frequent_flyer_frac`: the fraction of the population that is in the frequent flyer class of people 
+- `flying_LR`: The ratio between the likelihood of a frequent Flyer flying and a normal person flying on a given day.
+  - Alternatively, `p_ff` can be specified: the probability that a given person on a plane is a frequent Flyer. Any two of `frequent_flyer_frac, flying_LR, p_ff` can be used to calculate the third according to:
     
-    `p_ff = flying_LR * frequent_flier_frac / (flying_LR * frequent_flier_frac + (1 - frequent_flier_frac))`
+    `p_ff = flying_LR * frequent_flyer_frac / (flying_LR * frequent_flyer_frac + (1 - frequent_flyer_frac))`
 
 
 In `ReturnHomeCity` (not fully implemented yet), the other parameters are:

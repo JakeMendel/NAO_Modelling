@@ -374,31 +374,31 @@ class City:
         return sim_steps * self.delta_t
 
 #%%
-class FrequentFlierCity(City):
+class FrequentFlyerCity(City):
     def __init__(self,
                  N0: int = 10**6,
-                 frequent_flier_frac: float = 0.1,
+                 frequent_flyer_frac: float = 0.1,
                  p_ff: Optional[float] = None,
                  flying_LR: Optional[float] = None,
                  mixing_LR: float = 5,
                  compartments: str = 'SEIR'):
         mixing_LR_matrix = homogeneous_LR_matrix(2,1/mixing_LR)
-        self.groups = ['normal', 'frequent_fliers']
-        self.N0s = np.array([N0 * (1 - frequent_flier_frac), N0 * frequent_flier_frac],dtype = np.int64)
+        self.groups = ['normal', 'frequent_flyers']
+        self.N0s = np.array([N0 * (1 - frequent_flyer_frac), N0 * frequent_flyer_frac],dtype = np.int64)
         super().__init__(self.N0s, self.groups, compartments, mixing_LR_matrix)
-        self.frequent_flier_frac = frequent_flier_frac
+        self.frequent_flyer_frac = frequent_flyer_frac
         if (p_ff is None) and (flying_LR is None):
             flying_LR = 10
         assert (p_ff is None) != (flying_LR is None), "Specify exactly one of p_ff OR flying_LR!"
         if flying_LR is not None:
             self.flying_LR = flying_LR
-            self.p_ff = flying_LR * frequent_flier_frac/ (flying_LR * frequent_flier_frac + (1 - frequent_flier_frac))
+            self.p_ff = flying_LR * frequent_flyer_frac/ (flying_LR * frequent_flyer_frac + (1 - frequent_flyer_frac))
         if p_ff is not None:
             self.p_ff = p_ff
-            self.flying_LR = (p_ff / frequent_flier_frac) / ((1-p_ff) / (1 - frequent_flier_frac))
+            self.flying_LR = (p_ff / frequent_flyer_frac) / ((1-p_ff) / (1 - frequent_flyer_frac))
 
     def initial_conditions(self):
-        I_n = np.random.binomial(self.I0, 1-self.frequent_flier_frac, self.n_sims)
+        I_n = np.random.binomial(self.I0, 1-self.frequent_flyer_frac, self.n_sims)
         I_ff = self.I0 - I_n
         self.municipal[0,2,:,0] = I_n
         self.municipal[1,2,:,0] = I_ff
@@ -413,9 +413,9 @@ class FrequentFlierCity(City):
         return np.random.binomial(self.municipal[...,simulation_step], p_travel.reshape((2,1,1)))
 
     def __str__(self):
-        out = 'City Type:\n FrequentFlierCity'
+        out = 'City Type:\n FrequentflyerCity'
         out += f'\nN:\n {self.N0}'
-        out += f'\nfrequent_flier_frac:\n {self.frequent_flier_frac}'
+        out += f'\nfrequent_flyer_frac:\n {self.frequent_flyer_frac}'
         out += f'\nflying_LR:\n {self.flying_LR}'
         out += f'\np_ff:\n {self.p_ff}'
         out += f'\nmixing_LR:\n {self.mixing_LR}'

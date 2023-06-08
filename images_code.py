@@ -85,12 +85,12 @@ epidemic_time = 70
 thresholds = 10**np.linspace(-3,-1,3)
 mixnumber = 3000
 p_ff = 0.99
-frequent_flier_frac = 0.01
+frequent_flyer_frac = 0.01
 
 datasets = {}
 for mixing_LR in mixing_LRs:
     key = f'Mixing_LR: {mixing_LR}'
-    sim = F.HomogeneousNetwork(F.FrequentFlierCity,2,mixnumber=mixnumber,p_ff = p_ff, frequent_flier_frac = frequent_flier_frac, mixing_LR = mixing_LR)
+    sim = F.HomogeneousNetwork(F.FrequentFlyerCity,2,mixnumber=mixnumber,p_ff = p_ff, frequent_flyer_frac = frequent_flyer_frac, mixing_LR = mixing_LR)
     dataset = sim.multiple_sims(delta_t,epidemic_time,F.measles,I_0, n_sims,moving_avg = False)
     daily = dataset.daily_avg()
     datasets[key] = daily
