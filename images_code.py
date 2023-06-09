@@ -105,7 +105,7 @@ F.differences_vs_variable_final_img(datasets,list(flying_LRs),threshold_data,fil
 #Create a plot of Advantage vs Mixing Likelihood Ratio for FrequentFlyerCity
 group_LRs = list(np.logspace(0,3,40,base=10))
 I_0 = 100
-n_sims = 1000
+n_sims = 100
 delta_t = 0.04
 epidemic_time = 70
 thresholds = np.logspace(-3,-1,3, base=10)
@@ -117,7 +117,7 @@ filters = F.create_arrival_municipal_filter()
 datasets = {}
 for group_LR in group_LRs:
     key = f'Mixing_LR: {round(group_LR,1)}'
-    sim = F.HomogeneousNetwork(F.FrequentFlyerCity,2,mixnumber=mixnumber,p_ff = p_ff, frequent_flyer_frac = frequent_flyer_frac, group_LR = group_LR)
+    sim = F.HomogeneousNetwork(F.FrequentFlyerCity,5,mixnumber=mixnumber,p_ff = p_ff, frequent_flyer_frac = frequent_flyer_frac, group_LR = group_LR)
     dataset = sim.multiple_sims(delta_t,epidemic_time,F.measles,I_0, n_sims,moving_avg = False)
     daily = dataset.daily_avg()
     datasets[key] = daily
@@ -126,3 +126,7 @@ for group_LR in group_LRs:
 threshold_data = F.differences_vs_threshold_data(datasets, filters, thresholds)
 # F.differences_vs_variable(datasets,group_LRs,threshold_data,filters,thresholds,thresholds,log= 'x', x_name='Mixing Likelihood Ratio')
 
+#%%
+mpl.rcParams['figure.figsize'] = (10,8)
+
+F.differences_vs_variable_final_img(datasets,group_LRs,threshold_data,filters,thresholds,thresholds,log= 'x', x_name='Inter-group Interaction Likelihood Ratio',include_legend = True)

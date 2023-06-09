@@ -2,7 +2,7 @@
 
 `functions_and_classes.py` is the file that contains all the classes and functions. 
 
-`images_code.py` has example code to generate 3 of the figures that I use in my report.
+`images_code.py` has example code to generate all of the figures that I use in my All Hands Report.
 
 `generic_model.ipynb` is a jupyter notebook with various scripts for generating other useful plots.
 
@@ -106,4 +106,4 @@ To visualise simulations, I have implemented a number of plotting functions and 
 - `differences_vs_variable` is similar to `differences_vs_threshold`. In this case, the dict of `SimData` should be data from a family of simulations that are run for a range of values of one parameter. Then, for each threshold given, the difference in time to detection for the two groups is plotted against the value of that parameter, assuming that both subpopulations specified by the two filters have the same threshold.
 
 # Example script
-An example script for running a few simulations and reproducing some of the images in the report can be found in images_code.py
+An example script for running a few simulations and reproducing the images in the report can be found in images_code.py
